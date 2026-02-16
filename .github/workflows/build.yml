@@ -69,8 +69,43 @@ jobs:
       - name: Package Unsigned Binary
         run: |
           chmod +x ./dist/Aereo
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -z "$VERSION" ]; then VERSION="0.0.0"; fi
+
+          mkdir -p ./dist/Aereo.app/Contents/MacOS
+          mv ./dist/Aereo ./dist/Aereo.app/Contents/MacOS/Aereo
+
+          cat > ./dist/Aereo.app/Contents/Info.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDevelopmentRegion</key>
+            <string>en</string>
+            <key>CFBundleExecutable</key>
+            <string>Aereo</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.aereo.app</string>
+            <key>CFBundleInfoDictionaryVersion</key>
+            <string>6.0</string>
+            <key>CFBundleName</key>
+            <string>Aereo</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>${VERSION}</string>
+            <key>CFBundleVersion</key>
+            <string>${VERSION}</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>15.0</string>
+            <key>LSUIElement</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+
           cd ./dist
-          zip -9 Aereo-macOS-unsigned.zip Aereo
+          zip -r -9 Aereo-macOS-unsigned.zip Aereo.app
 
       - name: Generate Changelog
         id: changelog
@@ -96,8 +131,8 @@ jobs:
 
             ## Installation
             1. Download `Aereo-macOS-unsigned.zip`
-            2. Unzip and move `Aereo` to your preferred location
-            3. On first launch, right-click `Aereo` and choose **Open**
+            2. Unzip and drag `Aereo.app` to Applications
+            3. On first launch, right-click `Aereo.app` and choose **Open**
             4. Confirm **Open** in the security prompt
             
             ## Requirements
