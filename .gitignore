@@ -1,6 +1,7 @@
 
 # Swift Package Manager
 .build/
+.build-ci/
 .swiftpm/
 Package.resolved
 Packages/
@@ -30,6 +31,7 @@ build/
 # App bundles & archives
 *.app
 *.dmg
+*.zip
 *.dSYM.zip
 *.dSYM
 *.ipa

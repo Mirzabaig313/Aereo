@@ -18,10 +18,7 @@ let package = Package(
             targets: ["AereoCore"]
         ),
     ],
-    dependencies: [
-        // Sparkle for auto-updates (distributed outside App Store)
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
-    ],
+    dependencies: [],
     targets: [
         // MARK: - App Target
         .executableTarget(
@@ -29,7 +26,6 @@ let package = Package(
             dependencies: [
                 "AereoCore",
                 "AereoUI",
-                .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "Sources/AereoApp"
         ),

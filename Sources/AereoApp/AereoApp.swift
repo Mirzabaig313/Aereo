@@ -7,7 +7,6 @@
 import SwiftUI
 import AereoCore
 import AereoUI
-import Sparkle
 
 @main
 struct AereoApp: App {
@@ -17,9 +16,6 @@ struct AereoApp: App {
     @StateObject private var configManager = ConfigurationManager()
     @StateObject private var coordinator = DisplayCoordinator()
 
-    // Sparkle auto-updater
-    private let updaterController: SPUStandardUpdaterController
-
     @State private var showLibrary = false
     @State private var showSettings = false
 
@@ -28,13 +24,6 @@ struct AereoApp: App {
     init() {
         // Hide from Dock — menu bar only app
         NSApplication.shared.setActivationPolicy(.accessory)
-
-        // Initialize Sparkle (startingUpdater: true auto-checks on launch)
-        updaterController = SPUStandardUpdaterController(
-            startingUpdater: true,
-            updaterDelegate: nil,
-            userDriverDelegate: nil
-        )
     }
 
     var body: some Scene {
@@ -43,10 +32,7 @@ struct AereoApp: App {
             MenuBarView(
                 coordinator: coordinator,
                 configManager: configManager,
-                showLibrary: $showLibrary,
-                onCheckForUpdates: {
-                    updaterController.updater.checkForUpdates()
-                }
+                showLibrary: $showLibrary
             )
         } label: {
             Image(systemName: "sparkles.tv")
