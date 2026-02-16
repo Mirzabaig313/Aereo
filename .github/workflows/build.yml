@@ -49,142 +49,10 @@ jobs:
           name: Aereo-unsigned
           path: .build-ci/release/Aereo
 
-  # ─── Code Sign & Notarize ───────────────────────────────────
-  sign-and-notarize:
-    name: Sign & Notarize
-    needs: build
-    runs-on: macos-15
-    if: startsWith(github.ref, 'refs/tags/')
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Select Xcode
-        run: |
-          LATEST_XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -n 1)
-          sudo xcode-select -s "$LATEST_XCODE/Contents/Developer"
-          xcodebuild -version
-          swift --version
-
-      - name: Download Unsigned Binary
-        uses: actions/download-artifact@v4
-        with:
-          name: Aereo-unsigned
-          path: ./dist
-
-      - name: Import Signing Certificate
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.DEVELOPER_ID_CERTIFICATE }}
-          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          # Create temporary keychain
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          # Import certificate
-          CERT_PATH=$RUNNER_TEMP/certificate.p12
-          export CERT_PATH
-          python3 - <<'PY'
-          import base64
-          import os
-          import sys
-
-          raw = os.environ.get("CERTIFICATE_BASE64", "").strip()
-          if not raw:
-              print("DEVELOPER_ID_CERTIFICATE secret is empty", file=sys.stderr)
-              sys.exit(1)
-
-          variants = [
-              raw,
-              raw.replace("\\n", ""),
-              raw.replace("\\r", "").replace("\\n", ""),
-          ]
-
-          out_path = os.environ["CERT_PATH"]
-          last_error = None
-          for value in variants:
-              try:
-                  decoded = base64.b64decode(value, validate=True)
-                  if len(decoded) < 256:
-                      raise ValueError("decoded data too small to be a valid .p12")
-                  with open(out_path, "wb") as f:
-                      f.write(decoded)
-                  sys.exit(0)
-              except Exception as e:
-                  last_error = e
-
-          print(f"Failed to decode DEVELOPER_ID_CERTIFICATE as base64: {last_error}", file=sys.stderr)
-          sys.exit(1)
-          PY
-
-          # Validate PKCS#12 payload before importing into keychain
-          openssl pkcs12 -in "$CERT_PATH" -passin pass:"$CERTIFICATE_PASSWORD" -nokeys -clcerts > /dev/null
-
-          security import "$CERT_PATH" \
-            -P "$CERTIFICATE_PASSWORD" \
-            -A -t cert -f pkcs12 \
-            -k "$KEYCHAIN_PATH"
-
-          # Set keychain search list
-          security list-keychain -d user -s "$KEYCHAIN_PATH"
-
-      - name: Code Sign
-        env:
-          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
-        run: |
-          chmod +x ./dist/Aereo
-          codesign --force --deep --options runtime \
-            --sign "$SIGNING_IDENTITY" \
-            --timestamp \
-            ./dist/Aereo
-
-          # Verify
-          codesign --verify --verbose=2 ./dist/Aereo
-
-      - name: Create DMG
-        run: |
-          mkdir -p ./dmg-contents
-          cp ./dist/Aereo ./dmg-contents/
-          cp README.md ./dmg-contents/
-
-          hdiutil create -volname "Aereo" \
-            -srcfolder ./dmg-contents \
-            -ov -format UDZO \
-            ./Aereo.dmg
-
-      - name: Sign DMG
-        env:
-          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
-        run: |
-          codesign --force --sign "$SIGNING_IDENTITY" --timestamp ./Aereo.dmg
-
-      - name: Notarize
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-        run: |
-          xcrun notarytool submit ./Aereo.dmg \
-            --apple-id "$APPLE_ID" \
-            --team-id "$APPLE_TEAM_ID" \
-            --password "$APPLE_APP_PASSWORD" \
-            --wait
-
-          # Staple the notarization ticket
-          xcrun stapler staple ./Aereo.dmg
-
-      - name: Upload Signed DMG
-        uses: actions/upload-artifact@v4
-        with:
-          name: Aereo-signed
-          path: ./Aereo.dmg
-
   # ─── GitHub Release ─────────────────────────────────────────
   release:
     name: Create Release
-    needs: sign-and-notarize
+    needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
@@ -192,11 +60,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download Signed DMG
+      - name: Download Unsigned Binary
         uses: actions/download-artifact@v4
         with:
-          name: Aereo-signed
+          name: Aereo-unsigned
           path: ./dist
+
+      - name: Package Unsigned Binary
+        run: |
+          chmod +x ./dist/Aereo
+          cd ./dist
+          zip -9 Aereo-macOS-unsigned.zip Aereo
 
       - name: Generate Changelog
         id: changelog
@@ -215,18 +89,22 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ./dist/Aereo.dmg
+          files: ./dist/Aereo-macOS-unsigned.zip
           body: |
             ## What's Changed
             ${{ steps.changelog.outputs.changes }}
 
             ## Installation
-            1. Download `Aereo.dmg`
-            2. Open the DMG and drag Aereo to Applications
-            3. Launch from Applications — appears in menu bar
+            1. Download `Aereo-macOS-unsigned.zip`
+            2. Unzip and move `Aereo` to your preferred location
+            3. On first launch, right-click `Aereo` and choose **Open**
+            4. Confirm **Open** in the security prompt
             
             ## Requirements
             - macOS 15.0 (Sequoia) or later
             - Lock screen features require macOS 26 (Tahoe)
+
+            ## Note
+            This build is unsigned and not notarized.
           draft: false
           prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
